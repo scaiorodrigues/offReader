@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Leitor — textos e documentos em voz alta</title>
+  <meta name="description" content="Leitor de TXT, MD, PDF, DOCX e EPUB com narração neural em português do Brasil, que roda no seu navegador." />
+  <meta name="theme-color" content="#1f6feb" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <script type="module" src="/src/main.js"></script>
+</head>
+<body>
+  <header class="top">
+    <h1>Leitor</h1>
+    <nav>
+      <button id="btn-open" type="button">Abrir arquivo</button>
+      <button id="btn-paste" type="button" class="ghost">Colar texto</button>
+      <button id="btn-settings" type="button" class="ghost" aria-label="Vozes e configurações">⚙ Vozes</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="home">
+      <div id="drop" class="drop" tabindex="0" role="button" aria-label="Escolher arquivo">
+        <p class="big">Arraste um arquivo aqui ou toque para escolher</p>
+        <p class="small">TXT, MD, PDF, DOCX ou EPUB. O arquivo não sai do seu aparelho.</p>
+      </div>
+      <h2 id="recent-title" hidden>Recentes</h2>
+      <ul id="recent" class="recent"></ul>
+    </section>
+
+    <article id="reader" hidden>
+      <div class="reader-head">
+        <h2 id="doc-title"></h2>
+        <button id="btn-close" type="button" class="ghost">Fechar</button>
+      </div>
+      <div id="text" class="text" tabindex="0"></div>
+    </article>
+  </main>
+
+  <footer id="bar" class="bar" hidden>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+    <div class="progress"><div id="progress-fill"></div></div>
+    <div class="controls">
+      <button id="btn-prev" type="button" aria-label="Trecho anterior">⏮</button>
+      <button id="btn-play" type="button" class="primary" aria-label="Ler">▶</button>
+      <button id="btn-next" type="button" aria-label="Próximo trecho">⏭</button>
+      <label class="speed">Velocidade
+        <select id="speed">
+          <option value="0.8">0,8×</option><option value="0.9">0,9×</option><option value="1">1×</option>
+          <option value="1.1">1,1×</option><option value="1.25">1,25×</option><option value="1.5">1,5×</option>
+        </select>
+      </label>
+      <button id="btn-voice" type="button" class="ghost voice-btn"></button>
+    </div>
+  </footer>
+
+  <dialog id="dlg-settings">
+    <form method="dialog" class="dlg-head"><h2>Vozes e ajustes</h2><button class="ghost" value="close" aria-label="Fechar">✕</button></form>
+    <div class="dlg-body">
+      <p class="note">As vozes são baixadas uma vez e ficam guardadas no aparelho; depois funcionam sem internet. Cada voz tem personalidade própria — escolha a que preferir. Os modelos não oferecem controle de emoção nem de tom; o que você pode ajustar é a voz, a velocidade e as pausas.</p>
+      <div id="voices"></div>
+      <h3>Ajustes de leitura</h3>
+      <div class="field"><label for="set-speed">Velocidade <output id="out-speed"></output></label>
+        <input id="set-speed" type="range" min="0.7" max="1.6" step="0.05" /></div>
+      <div class="field"><label for="set-sp">Pausa entre frases <output id="out-sp"></output></label>
+        <input id="set-sp" type="range" min="0" max="1.5" step="0.05" /></div>
+      <div class="field"><label for="set-pp">Pausa entre parágrafos <output id="out-pp"></output></label>
+        <input id="set-pp" type="range" min="0" max="2.5" step="0.1" /></div>
+      <div class="field"><label for="set-steps">Refinamento do Supertonic <output id="out-steps"></output></label>
+        <input id="set-steps" type="range" min="3" max="12" step="1" />
+        <small>Mais passos = fala mais precisa, porém mais lenta para gerar. Só afeta as vozes Supertonic.</small></div>
+      <div class="field"><label for="set-font">Tamanho do texto <output id="out-font"></output></label>
+        <input id="set-font" type="range" min="14" max="34" step="1" /></div>
+      <div class="field"><label for="set-theme">Tema</label>
+        <select id="set-theme"><option value="auto">Automático</option><option value="light">Claro</option><option value="dark">Escuro</option><option value="sepia">Sépia</option></select></div>
+    </div>
+  </dialog>
+
+  <dialog id="dlg-paste">
+    <form method="dialog" class="dlg-head"><h2>Colar texto</h2><button class="ghost" value="close" aria-label="Fechar">✕</button></form>
+    <div class="dlg-body">
+      <textarea id="paste-text" rows="10" placeholder="Cole ou digite o texto aqui"></textarea>
+      <button id="paste-go" type="button" class="primary wide">Ler este texto</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="alert" hidden></div>
+  <input id="file" type="file" accept=".txt,.md,.markdown,.pdf,.docx,.epub,text/plain,text/markdown,application/pdf,application/epub+zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden />
+  <audio id="audio" preload="auto"></audio>
+</body>
+</html>
