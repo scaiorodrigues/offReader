@@ -10,7 +10,10 @@
     "build": "npm run prepare-vendor && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "verify:engines": "node scripts/verify-engines.mjs"
+    "verify:engines": "node scripts/verify-engines.mjs",
+    "e2e:files": "node tests/e2e/files-ui.mjs",
+    "e2e:voices": "node tests/e2e/real-voice.mjs",
+    "e2e:voices:all": "node tests/e2e/real-voice.mjs --supertonic"
   },
   "dependencies": {
     "fflate": "0.8.2",

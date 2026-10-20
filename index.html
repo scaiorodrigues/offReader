@@ -60,8 +60,12 @@
   <dialog id="dlg-settings">
     <form method="dialog" class="dlg-head"><h2>Vozes e ajustes</h2><button class="ghost" value="close" aria-label="Fechar">✕</button></form>
     <div class="dlg-body">
-      <p class="note">As vozes são baixadas uma vez e ficam guardadas no aparelho; depois funcionam sem internet. Cada voz tem personalidade própria — escolha a que preferir. Os modelos não oferecem controle de emoção nem de tom; o que você pode ajustar é a voz, a velocidade e as pausas.</p>
+      <p class="note">As vozes são baixadas uma vez e ficam guardadas no aparelho; depois funcionam sem internet. Piper é leve (~63 MB por voz) e rápido, mas só tem vozes masculinas em português. Supertonic traz vozes femininas e masculinas, porém o modelo tem ~400 MB (baixado uma vez, compartilhado pelas 10 vozes) e exige mais memória e processamento. Os modelos não oferecem controle de emoção nem de tom; o que você pode ajustar é a voz, a velocidade e as pausas.</p>
       <div id="voices"></div>
+      <details class="credits"><summary>Créditos e licenças das vozes</summary>
+        <p>Piper (vozes Cadu, Faber, Jeff — dados CC0; Edresson — dados <a href="https://github.com/Edresson/TTS-Portuguese-Corpus" target="_blank" rel="noopener">TTS-Portuguese-Corpus</a> de Edresson Casanova, licença CC BY 4.0). Fonemizador espeak-ng (GPL-3.0).
+        Supertonic 3 © Supertone Inc., modelo sob licença <a href="https://huggingface.co/supertone-oss-archive/supertonic-3/blob/aafc6e32416a594460b32413efc49d7fe4ce6d46/LICENSE" target="_blank" rel="noopener">OpenRAIL-M</a>, que proíbe usos como gerar conteúdo para enganar ou se passar por outra pessoa.</p>
+      </details>
       <h3>Ajustes de leitura</h3>
       <div class="field"><label for="set-speed">Velocidade <output id="out-speed"></output></label>
         <input id="set-speed" type="range" min="0.7" max="1.6" step="0.05" /></div>

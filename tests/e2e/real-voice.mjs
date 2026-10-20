@@ -8,7 +8,7 @@ const withSupertonic = process.argv.includes('--supertonic');
 const results = [];
 const check = (name, ok, extra = '') => { results.push({ name, ok }); console.log(`${ok ? '✓' : '✗'} ${name} ${extra}`); };
 
-const server = await startPreview();
+const server = await startPreview(0, { prefix: process.env.PREFIX || '/' });
 const browser = await launch();
 const context = await browser.newContext({ viewport: { width: 420, height: 800 } });
 const page = await context.newPage();
@@ -16,6 +16,11 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('dialog', (d) => d.accept());
+await page.addInitScript(() => {
+  window.__played = [];
+  const orig = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function play(...a) { if (this.src.startsWith('blob:')) window.__played.push(this.src); return orig.apply(this, a); };
+});
 
 const TEXT = 'Esta é a primeira frase do teste. Aqui vai a segunda frase, com o número 3 e uma vírgula.\n\nE este é um novo parágrafo para conferir a pausa.';
 
@@ -57,6 +62,21 @@ try {
   }
 
   await playAndCheck('Piper Cadu (online)', 'piper:pt_BR-cadu-medium', 180000);
+
+  // botão "Ouvir prévia" da tela de vozes (voz já baixada acima)
+  await page.click('#btn-settings');
+  const before = await page.evaluate(() => window.__played.length);
+  await page.click('.voice:has-text("Cadu") button:has-text("Ouvir prévia")');
+  await page.waitForFunction((n) => window.__played.length > n, before, { timeout: 60000 });
+  const prev = await page.evaluate(async () => {
+    const buf = await (await fetch(window.__played.at(-1))).arrayBuffer();
+    const v = new DataView(buf); let sum = 0; const n = (buf.byteLength - 44) / 2;
+    for (let i = 0; i < n; i++) { const x = v.getInt16(44 + i * 2, true) / 32768; sum += x * x; }
+    return { seconds: +(n / v.getUint32(24, true)).toFixed(2), rms: +Math.sqrt(sum / n).toFixed(4) };
+  });
+  check('prévia da voz toca (frase curta)', prev.rms > 0.005 && prev.seconds > 2 && prev.seconds < 15, JSON.stringify(prev));
+  check('voz baixada aparece como "Baixada"', (await page.textContent('.voice:has-text("Cadu")')).includes('Baixada'));
+  await page.keyboard.press('Escape');
   const cached = await page.evaluate(async () => (await caches.keys()).includes('leitor-models-v1') && (await (await caches.open('leitor-models-v1')).keys()).length);
   check('modelo ficou no Cache Storage', cached >= 2, String(cached));
 

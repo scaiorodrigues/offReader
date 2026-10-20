@@ -3,7 +3,7 @@ import { allVoices, engineForVoice, cachedMapAll } from '../lib/engines/registry
 import { GENDER_LABEL, ENGINE_LABEL, PREVIEW_TEXT, voiceBytes } from '../lib/engines/voices.js';
 import { pcmToWav } from '../lib/wav.js';
 
-const fmtSize = (bytes) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`);
+const fmtSize = (bytes) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : bytes < 1e6 ? `${Math.max(1, Math.round(bytes / 1e3))} KB` : `${Math.round(bytes / 1e6)} MB`);
 const el = (tag, props = {}, ...kids) => {
   const n = Object.assign(document.createElement(tag), props);
   for (const k of kids.flat()) if (k != null) n.append(k);
@@ -46,8 +46,14 @@ export function initVoicesUI({ container, getSettings, onSelect, onEngineTouched
     }
   }
 
+  // Voz Supertonic com o modelo compartilhado já baixado: falta só o arquivo de estilo (~0,3 MB).
+  const remainingBytes = (voice) => {
+    const sharedReady = voice.sharedFiles.length > 0 && allVoices().some((v) => v.engine === voice.engine && v.id !== voice.id && cached[v.id]);
+    return sharedReady ? voice.files.reduce((a, f) => a + f.bytes, 0) : voiceBytes(voice);
+  };
+
   const confirmDownload = (voice) => window.confirm(
-    `A voz "${voice.name}" (${ENGINE_LABEL[voice.engine]}) precisa baixar ${fmtSize(voiceBytes(voice))} uma única vez.`
+    `A voz "${voice.name}" (${ENGINE_LABEL[voice.engine]}) precisa baixar ${fmtSize(remainingBytes(voice))} uma única vez.`
     + ' Depois ela fica guardada e funciona sem internet. Se estiver em dados móveis, prefira o Wi-Fi. Continuar?');
 
   async function ensureDownloaded(voice) {
@@ -93,18 +99,19 @@ export function initVoicesUI({ container, getSettings, onSelect, onEngineTouched
     const selected = getSettings().voiceId === voice.id;
     const b = busy.get(voice.id);
     const isCached = !!cached[voice.id];
-    const sharedNote = voice.sharedFiles.length ? ' (modelo compartilhado entre as vozes Supertonic)' : '';
+    const need = remainingBytes(voice);
+    const sharedNote = voice.sharedFiles.length && need === voiceBytes(voice) ? ' (o modelo é compartilhado: as outras vozes Supertonic custam quase nada depois)' : '';
     const actions = el('div', { className: 'actions' },
       el('button', { type: 'button', className: selected ? '' : 'primary', disabled: selected || !!b, textContent: selected ? 'Em uso' : 'Usar esta voz', onclick: () => use(voice) }),
       el('button', { type: 'button', disabled: !!b, textContent: '▶ Ouvir prévia', onclick: () => preview(voice) }),
       isCached
         ? el('button', { type: 'button', className: 'ghost', disabled: !!b || selected, title: selected ? 'Troque de voz antes de remover' : '', textContent: 'Remover', onclick: () => remove(voice) })
-        : el('button', { type: 'button', className: 'ghost', disabled: !!b, textContent: `Baixar (${fmtSize(voiceBytes(voice))})`, onclick: async () => { if (confirmDownload(voice)) await download(voice); } }));
+        : el('button', { type: 'button', className: 'ghost', disabled: !!b, textContent: `Baixar (${fmtSize(need)})`, onclick: async () => { if (confirmDownload(voice)) await download(voice); } }));
     return el('div', { className: `voice${selected ? ' selected' : ''}` },
       el('div', { className: 'meta' },
         el('strong', { textContent: voice.name }),
         el('span', { className: 'badge', textContent: ENGINE_LABEL[voice.engine] }),
-        el('span', { className: isCached ? 'st-ok' : 'st-no', textContent: isCached ? '✓ Baixada' : `Não baixada · ${fmtSize(voiceBytes(voice))}${sharedNote}` })),
+        el('span', { className: isCached ? 'st-ok' : 'st-no', textContent: isCached ? '✓ Baixada' : `Não baixada · ${fmtSize(need)}${sharedNote}` })),
       actions,
       b ? el('div', { className: 'bar-dl' }, el('i', { style: `width:${Math.round((b.fraction ?? 0) * 100)}%` })) : null,
       b ? el('div', { className: 'msg', textContent: b.label }) : null);

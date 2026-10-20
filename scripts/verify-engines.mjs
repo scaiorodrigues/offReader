@@ -1,5 +1,5 @@
 // Verificação com MODELOS REAIS, fora do navegador (Node + onnxruntime-web 1.18.0).
-// Uso: node scripts/verify-engines.mjs [--only=piper|supertonic] [--out=DIR] [--cache=DIR]
+// Uso: node scripts/verify-engines.mjs [--only=piper|supertonic] [--styles=F1,M1] [--steps=8] [--text="..."] [--out=DIR] [--cache=DIR]
 // Baixa os modelos do Hugging Face (Piper ~63 MB; Supertonic ~400 MB) e grava WAVs + relatório.
 // Mede apenas coisas objetivas (duração, pico, RMS, F0). NÃO avalia qualidade nem naturalidade.
 import fs from 'node:fs';
@@ -20,7 +20,7 @@ fs.mkdirSync(OUT, { recursive: true });
 fs.mkdirSync(CACHE, { recursive: true });
 ort.env.wasm.numThreads = 1;
 
-const TEXT = 'Em 2024, o Sr. Silva leu 3 livros. A leitura em voz alta ajuda a descansar os olhos, e custa apenas R$ 12,50 por mês.';
+const TEXT = args.text ?? 'Em 2024, o Sr. Silva leu 3 livros. A leitura em voz alta ajuda a descansar os olhos, e custa apenas R$ 12,50 por mês.';
 const report = [];
 
 async function get(url) {
@@ -75,11 +75,12 @@ if (!args.only || args.only === 'supertonic') {
   console.log('sessões Supertonic criadas em', Math.round(performance.now() - t0), 'ms');
   const tts = await createSupertonic({ ort, sessions, cfgs, indexer });
   const ids = (args.styles ?? 'F1,M1').split(',');
+  const steps = Number(args.steps ?? 8);
   for (const s of ids) {
     const v = voiceById(`supertonic:${s}`);
     const style = parseStyle(ort, JSON.parse(Buffer.from(await get(v.files[0].url))));
     const t1 = performance.now();
-    const { pcm, sampleRate } = await tts.synth(prepareForSpeech(TEXT), { style, steps: 8, speed: 1 });
+    const { pcm, sampleRate } = await tts.synth(prepareForSpeech(TEXT), { style, steps, speed: 1 });
     record(v.id, pcm, sampleRate, performance.now() - t1);
   }
 }
