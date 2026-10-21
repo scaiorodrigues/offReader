@@ -1,0 +1,118 @@
+# Verificação
+
+O que foi medido de fato, como reproduzir e o que **não** foi (e não pode ser) verificado por quem escreveu o código.
+
+## 0. Limite principal
+
+**Ninguém aqui ouviu o áudio.** Tudo abaixo é objetivo (duração, nível, altura da voz, transcrição automática, comportamento da interface).
+Naturalidade, sotaque, "agrado" e se a voz feminina soa feminina para você só se confirmam ouvindo (veja o checklist no PR).
+
+## 1. Testes automáticos (`npm test`, sem rede)
+
+60 testes: normalização de números/abreviações, divisão em trechos, leitores de TXT/MD/DOCX/EPUB/PDF, player com **motor falso**
+(pré-busca, pausa, busca, troca de voz/velocidade, erros), cache offline (com `CacheStorage` simulado), catálogo de vozes
+e o mapeamento de fonemas do Piper contra o **fonemizador real** (reproduz os ids do CLI para o Faber e evita o estouro da Edresson).
+
+## 2. Motores com modelos reais (Node, `npm run verify:engines`)
+
+Ambiente: servidor de nuvem, WASM de 1 thread, onnxruntime-web 1.18.0. Frase de teste com números, moeda e abreviação.
+
+| Voz | Resultado |
+|---|---|
+| Piper Cadu, Faber, Jeff, Edresson | sintetizam; sem NaN; ~0,4× do tempo do áudio (mais rápido que tempo real) |
+| Supertonic F1–F5, M1–M5 | sintetizam; sem NaN; ~1,8× do tempo do áudio com 8 passos |
+
+Supertonic — tempo de síntese ÷ duração do áudio, mesma frase: **3 passos 0,9× · 5 passos 1,2× · 8 passos 1,9×** (por isso o padrão é 5 e o player pré-busca à frente).
+
+**Bug encontrado e corrigido:** o CLI do fonemizador usa um mapa de fonemas padrão; a voz Edresson tem mapa próprio e falhava (`indices element out of data bounds`). Agora o app mapeia com o `phoneme_id_map` de cada modelo.
+
+## 3. Gênero das vozes (altura da voz, Praat — `scripts/f0-check.py`)
+
+Mediana de F0 em ~12 s de fala. Referência aproximada: masculina 85–155 Hz, feminina 165–255 Hz.
+
+| Voz | F0 mediano | Leitura |
+|---|---|---|
+| Supertonic F1 · F2 · F3 · F4 · F5 | 190 · 218 · 170 · 194 · 163 Hz | faixa feminina |
+| Supertonic M1 · M2 · M3 · M4 · M5 | 131 · 89 · 107 · 119 · 88 Hz | faixa masculina |
+| Piper Cadu | 136 Hz | faixa masculina |
+| Piper Jeff · Edresson | 152 · 156 Hz | masculina, parte alta da faixa |
+| Piper Faber | 173 Hz | **ambíguo** (entre as faixas) |
+
+As 5 femininas do Supertonic ficam acima das 5 masculinas, o que corrobora os rótulos oficiais F/M. Para o Piper, o gênero "masculino" vem do que o autor informou
+(os cards das vozes não dizem); a medição é coerente para Cadu, Jeff e Edresson e **inconclusiva para Faber** — ouça e, se for o caso, reclassifique em `src/lib/engines/voices.js`.
+
+## 4. Inteligibilidade (Whisper-base, `scripts/asr-check.py`)
+
+Parágrafo de 3 frases sem numerais, 14 vozes, WER = erro de palavras da transcrição automática contra o texto lido.
+É um **indicador de que as palavras são reconhecíveis**, não de qualidade; o próprio reconhecedor erra (p.ex. "em voz alta" → "envosa" apareceu em vozes distintas).
+
+| Motor | WER |
+|---|---|
+| Supertonic (8 passos), 10 vozes | 0 a 6% |
+| Piper, 4 vozes | 6 a 12% |
+
+Com 3 passos o Supertonic já errava palavras numa frase de teste (WER 11%), com 5 passos 6%, com 8 passos 0% — uma única frase, indicativo apenas.
+
+## 5. Navegador real (Chromium via Playwright)
+
+`npm run e2e:voices:all` — 25 verificações passaram, incluindo:
+
+- lista de vozes em Femininas (5) e Masculinas (9), 14 no total;
+- **Piper Cadu e Supertonic F1**: baixam do Hugging Face, sintetizam, tocam (áudio não silencioso), avançam de trecho e pausam;
+- botão "Ouvir prévia";
+- **modo offline** (`setOffline(true)` + recarregar): o app abre pelo service worker e as duas vozes tocam a partir do Cache Storage;
+- sem erros de console/página;
+- o mesmo fluxo sob subcaminho `/offreader/` (Piper) passou.
+
+Tempos medidos no Chromium headless: Piper ≈ 7 s até o 1º áudio (inclui baixar 63 MB), 3 s offline; Supertonic ≈ 24 s (inclui baixar ~400 MB), 8 s offline.
+
+`npm run e2e:files` — abre TXT, MD, DOCX, EPUB e PDF pelo seletor de arquivos, confere o texto exibido e o aviso para formato inválido.
+
+## 6. Rodada 2 — texto colado e demora para começar (relato de uso no celular)
+
+**Causa da demora (medida, Chromium com CPU 4× mais lenta, modelo já em cache, texto colado de 316 mil caracteres):**
+carregar a voz (criar a sessão ONNX) + sintetizar o **primeiro trecho inteiro** (~12–15 s de áudio). No Supertonic a síntese roda ~1,1–1,4× o tempo do áudio, então o 1º trecho sozinho levava ~17 s.
+
+| Tempo até o 1º som após tocar ▶ | antes | depois (▶ imediato) | depois (voz já pré-carregada) |
+|---|---|---|---|
+| Piper Cadu | 6,8 s | 4,6 s | **1,0 s** |
+| Supertonic F1 (5 passos) | 21,0 s | 9,3 s | **4,0 s** |
+
+O que mudou: nível `basic` do ONNX (criar sessão: Piper 1,44→0,68 s; Supertonic 4 sessões 38,6→3,2 s em Node, síntese sem perda), pré-carga da voz ao abrir o texto,
+trecho inicial dividido em duas unidades (início curto + resto) e trechos-alvo menores (110 caracteres).
+O Supertonic ainda gera mais devagar que a fala em CPU lenta (medido 1,36–1,37× no trecho curto): haverá pausas entre trechos; o app avisa e sugere reduzir o refinamento ou usar Piper.
+
+**Bugs de leitura encontrados em texto colado (corrigidos, cada um com teste):**
+horas viravam "dezhtrinta"/"oitoh"/"doish"; datas "21/10/2026" saíam como "vinte e um/dez/dois mil…"; telefone/CPF eram lidos como números enormes;
+"R$ 1,5 milhão" saía "um real e cinquenta centavos milhão"; "3°C" virava "terceiroC" e "21º" virava "vinte e umº"; emojis eram falados pelo Piper;
+e-mails, hashtags, símbolos e unidades (km/h, kg, min) saíam crus; "Capítulo XII" e "século XXI" eram soletrados; blocos em MAIÚSCULAS podiam ser soletrados.
+Quebras de linha simples (listas, versos, títulos, mensagens) eram fundidas num bloco só; agora só se junta quando parece texto "quebrado" de PDF.
+Trechos sem nada falável (`***`, `...`, só emoji) agora não chamam o motor e viram um silêncio de ≥0,25 s (antes podiam gerar um WAV de 0 s).
+Um erro ao preparar o trecho seguinte não derruba mais o trecho que está tocando.
+
+**Tamanho do texto:** limpeza+divisão de 320 mil caracteres leva ~80 ms e de 2,1 milhões ~0,3 s (Node); no Chromium com CPU 4× mais lenta um texto de 2,1 milhões de caracteres
+(28.572 trechos) abre em ~5,5 s, renderiza o resto em lotes (pior travamento de tela 261 ms) e o 1º som sai em ~3,7 s. Não encontrei falha causada só pelo tamanho; a medição
+sugere que o atraso percebido vinha da síntese do 1º trecho, não do texto.
+
+**Não reproduzido/ainda aberto:** a descrição "bugs ao importar texto" era genérica; os acima são o que consegui provocar. Se ainda ocorrer algo específico no celular
+(mensagem de erro, trecho que trava, palavra lida errada), preciso do exemplo exato do texto.
+
+## 7. Rodada 3 — buffer à frente e tela apagada
+
+**Mudança:** antes o app preparava só 2 trechos (~10 s) à frente e trocava o áudio a cada trecho. Agora prepara por **tempo** (padrão 3 min; 30 s a 10 min) e emenda as unidades prontas em segmentos de até 90 s.
+Se o próximo áudio ainda não está pronto, toca um silêncio em loop para manter a sessão de áudio viva. Trocar voz/velocidade corta o segmento no fim da unidade atual.
+
+**Medido (Chromium, Piper Cadu, texto longo):** buffer à frente > 40 s poucos segundos depois de começar; 3 trocas de áudio no início (antes: uma por trecho).
+**Emulação de tela apagada:** com a página **congelada** pelo DevTools por 12 s (JS parado), o áudio já emendado seguiu tocando (avançou 12 s) e o destaque alcançou a posição real ao descongelar.
+Isso mostra que o segmento longo não depende do JavaScript enquanto toca; **não** mostra que o celular manterá a página viva na troca de um segmento para o outro.
+O Supertonic (gera ~1,1–1,4× o tempo do áudio em CPU lenta) não consegue encher o buffer: há pausas entre trechos, preenchidas com silêncio em loop.
+
+**Não dá para "carregar tudo de uma vez":** sintetizar um livro inteiro leva horas de CPU (e bateria), ocupa centenas de MB e fica obsoleto ao mudar voz/velocidade. O buffer por tempo é o equivalente seguro.
+
+## 8. O que NÃO foi verificado
+
+- **Qualidade/naturalidade do áudio** e a percepção de gênero (precisa de ouvidos).
+- **Celulares reais** (iOS/Android): memória do Supertonic (~400 MB de modelo), velocidade em CPU móvel, **reprodução com tela bloqueada** (a troca de um segmento para o próximo em segundo plano é o ponto de risco), instalação como PWA.
+- **Deploy real no Netlify** (só o build local e o `netlify.toml`); cabeçalhos de cache.
+- PDFs reais grandes/complexos (só PDF sintético simples); EPUB/DOCX reais com estruturas exóticas.
+- Supertonic com WebGPU (não implementado; só WASM).

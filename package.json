@@ -1,0 +1,31 @@
+{
+  "name": "offreader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Leitor de textos e documentos com narração neural em pt-BR, 100% no navegador",
+  "scripts": {
+    "prepare-vendor": "node scripts/prepare-vendor.mjs",
+    "dev": "npm run prepare-vendor && vite",
+    "build": "npm run prepare-vendor && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "verify:engines": "node scripts/verify-engines.mjs",
+    "e2e:files": "node tests/e2e/files-ui.mjs",
+    "e2e:voices": "node tests/e2e/real-voice.mjs",
+    "e2e:voices:all": "node tests/e2e/real-voice.mjs --supertonic",
+    "e2e:stress": "node tests/e2e/paste-stress.mjs",
+    "e2e:background": "node tests/e2e/buffer-background.mjs"
+  },
+  "dependencies": {
+    "fflate": "0.8.2",
+    "onnxruntime-web": "1.18.0",
+    "pdfjs-dist": "4.10.38"
+  },
+  "devDependencies": {
+    "@diffusionstudio/piper-wasm": "1.0.0",
+    "playwright": "^1.49.1",
+    "vite": "5.4.11",
+    "vitest": "2.1.8"
+  }
+}
