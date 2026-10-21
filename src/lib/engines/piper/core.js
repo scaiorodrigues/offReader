@@ -56,7 +56,8 @@ export function phonemesToIds(phonemes, idMap) {
 }
 
 export async function createPiperVoice({ ort, modelBytes, config, phonemizer }) {
-  const session = await ort.InferenceSession.create(modelBytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+  // 'basic': criar a sessão leva ~metade do tempo de 'all' (medido) sem tornar a síntese mais lenta
+  const session = await ort.InferenceSession.create(modelBytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'basic' });
   const sampleRate = config.audio.sample_rate;
   const multiSpeaker = Object.keys(config.speaker_id_map ?? {}).length > 0;
   return {

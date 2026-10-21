@@ -15,6 +15,7 @@ npm run e2e:files      # Chromium: abre TXT/MD/DOCX/EPUB/PDF pela interface (sem
 npm run e2e:voices     # Chromium + modelo Piper REAL (baixa ~63 MB): toca, prévia, cache e OFFLINE
 npm run e2e:voices:all # idem + Supertonic F1 (baixa ~400 MB, leva alguns minutos)
 npm run verify:engines # Node + modelos reais: sintetiza com os motores e grava WAVs + estatísticas
+npm run e2e:stress     # Chromium com CPU limitada: cola um texto enorme e mede o tempo até o 1º som (ver cabeçalho do arquivo)
 ```
 Verificações de áudio fora do navegador: `scripts/f0-check.py` (altura da voz/gênero, Praat) e `scripts/asr-check.py` (Whisper → WER).
 Eles medem coisas objetivas; **não avaliam qualidade/naturalidade**. Nunca afirme qualidade de áudio: você não ouve.
@@ -24,9 +25,12 @@ Eles medem coisas objetivas; **não avaliam qualidade/naturalidade**. Nunca afir
 ```
 src/main.js                 controlador da UI (DOM puro). Expõe window.__leitor só para testes E2E
 src/ui/voices-ui.js         lista de vozes (Femininas/Masculinas), prévia, baixar/remover
-src/lib/normalize.js        cleanText (extração) e prepareForSpeech (números/abreviações -> palavras pt-BR)
-src/lib/split.js            texto -> trechos (frases agrupadas até maxLen; marca fim de parágrafo)
-src/lib/player.js           fila de síntese com pré-busca (2 à frente) sobre um <audio>; independe do motor
+src/lib/normalize.js        cleanText (extração; decide quebra de linha: continuação de PDF x título/item/verso) e prepareForSpeech
+                            (horas, datas, telefone/CPF, moeda, ordinais, romanos, unidades, e-mail, emojis, MAIÚSCULAS -> fala pt-BR)
+src/lib/split.js            texto -> trechos (frases agrupadas até targetLen=110, limite rígido maxLen=220; quebra simples = fronteira) e splitHead
+src/lib/player.js           fila de síntese com pré-busca (2 à frente) sobre um <audio>; independe do motor.
+                            "Trecho" = o que a UI destaca; "unidade" = o que é sintetizado (o trecho em que a leitura COMEÇA vira 2 unidades:
+                            início curto + resto, para o 1º som sair cedo). `index` é sempre de trecho. `preload()` aquece a voz em 2º plano.
 src/lib/wav.js              PCM -> WAV 16 bits (+ silêncio final = pausa) e estatísticas
 src/lib/storage.js          configurações (localStorage) e documentos recentes (IndexedDB)
 src/lib/parsers/            txt, md, docx (fflate), epub (fflate), pdf (pdf.js injetado); sem DOM => testável no Node
@@ -58,6 +62,9 @@ Adicionar um motor = criar worker + core, entrar no catálogo `voices.js` e regi
 - **onnxruntime-web fixado em 1.18.0** (sem `^`). Funciona com Piper e Supertonic 3 (testado). Se um dia precisar de outra versão para um motor, isole por worker/entrada.
 - Os binários `.wasm` do ORT são servidos de `/vendor/ort/` (`ort.env.wasm.wasmPaths`), nunca de CDN: o app precisa funcionar offline e sob subcaminho (`base: './'`).
 - **Piper:** use o `phoneme_id_map` **do modelo** (`phonemesToIds`), não o `phoneme_ids` do CLI do fonemizador: o CLI usa um mapa padrão e a voz Edresson quebra (índice fora do embedding).
+- **Latência até o 1º som** (medida com CPU 4× mais lenta, modelo em cache): o custo é carregar a voz + sintetizar o 1º trecho. Por isso: (1) `graphOptimizationLevel: 'basic'` nos dois motores (criar a sessão cai ~50% no Piper e de 38 s→3 s no Supertonic nas medições, sem síntese mais lenta; 'all' também usa mais memória); (2) `warmUp()` em `main.js` pré-carrega a voz ao abrir o texto (só se já estiver baixada — nunca baixa sem pedir); (3) o trecho inicial é dividido (`splitHead`). Não volte para 'all' sem medir.
+- Trechos sem letra/número (`***`, `...`, emoji) **não chamam o motor** e viram ≥0,25 s de silêncio; um WAV de 0 s pode dar erro no `<audio>`.
+- Texto grande: a UI renderiza em lotes (`startRender`/`renderMore`); `highlight()` chama `ensureRendered`. Não renderize 30 mil `<span>` de uma vez.
 - **Supertonic:** ~396 MB (vector_estimator 256 MB, vocoder 101 MB). Pico de memória alto ao criar sessões: em celulares pode falhar. Custo de síntese ≈ proporcional ao nº de passos (3→0,9×, 5→1,2×, 8→1,9× o tempo do áudio, medido em CPU de servidor, 1 thread). Por isso o player pré-busca à frente e o padrão é 5 passos.
 - URLs do Hugging Face estão **fixadas por revisão** em `voices.js` (o repositório do Supertonic foi arquivado; o namespace atual é `supertone-oss-archive`). Nunca troque por `main`.
 - `<audio>` + blob WAV (não Web Audio): melhor com tela bloqueada. iOS exige "destravar" o elemento dentro do toque (`Player._unlock`).

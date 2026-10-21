@@ -109,7 +109,7 @@ export async function createSupertonic({ ort, sessions, cfgs, indexer }) {
 }
 
 export async function loadSupertonicSessions(ort, bytes) {
-  const opts = { executionProviders: ['wasm'], graphOptimizationLevel: 'all' };
+  const opts = { executionProviders: ['wasm'], graphOptimizationLevel: 'basic' };
   const sessions = {};
   // Um por vez: reduz o pico de memória em celulares.
   sessions.dp = await ort.InferenceSession.create(bytes.dp, opts);

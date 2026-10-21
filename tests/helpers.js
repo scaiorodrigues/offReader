@@ -7,7 +7,7 @@ export class FakeAudio extends EventTarget {
   end() { this.dispatchEvent(new Event('ended')); }
 }
 
-export function fakeEngine({ id = 'fake', voices, delay = 0, failOn = null } = {}) {
+export function fakeEngine({ id = 'fake', voices, delay = 0, failOn = null, loadDelay = 0 } = {}) {
   const calls = { load: [], synth: [] };
   const list = voices ?? [
     { id: `${id}:f`, name: 'Fake F', gender: 'feminina', engine: id, sizeMB: 1, sharedFiles: [], files: [] },
@@ -17,7 +17,7 @@ export function fakeEngine({ id = 'fake', voices, delay = 0, failOn = null } = {
   return {
     id, name: 'Fake', maxChunk: 100, calls,
     listVoices: () => list,
-    async load(voiceId, onProgress) { calls.load.push(voiceId); onProgress?.({ phase: 'baixando', fraction: 1 }); cached.add(voiceId); return { sampleRate: 8000 }; },
+    async load(voiceId, onProgress) { calls.load.push(voiceId); if (loadDelay) await new Promise((r) => setTimeout(r, loadDelay)); onProgress?.({ phase: 'baixando', fraction: 1 }); cached.add(voiceId); return { sampleRate: 8000 }; },
     async download(voiceId, onProgress) { onProgress?.({ phase: 'baixando', fraction: 1 }); cached.add(voiceId); },
     async synth(text, opts) {
       calls.synth.push({ text, ...opts });

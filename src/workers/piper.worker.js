@@ -19,20 +19,28 @@ function initRuntime(b) {
 serve(self, {
   async load({ voiceId, base: b }, progress) {
     initRuntime(b);
-    if (current?.id === voiceId) return { sampleRate: current.voice.sampleRate };
+    if (current?.id === voiceId) return { sampleRate: current.voice.sampleRate, timings: { ready: true } };
     const meta = voiceById(voiceId);
     if (!meta) throw new Error(`Voz desconhecida: ${voiceId}`);
+    const timings = {};
+    const lap = (name, t0) => { timings[name] = Math.round(performance.now() - t0); };
+    let t = performance.now();
     const [modelBytes, configBytes] = await fetchAll(voiceFiles(meta), { onProgress: (p) => progress({ phase: 'baixando', ...p }) });
+    lap('arquivos', t);
     progress({ phase: 'preparando', fraction: 1 });
     if (!phonemizer) {
+      t = performance.now();
       const mod = await import(/* @vite-ignore */ `${base}vendor/piper/piper_phonemize.mjs`);
       phonemizer = await createPhonemizer(mod.default, { locateFile: (name) => `${base}vendor/piper/${name}` });
+      lap('fonemizador', t);
     }
     await current?.voice.dispose();
     current = null;
+    t = performance.now();
     const voice = await createPiperVoice({ ort, modelBytes, config: JSON.parse(new TextDecoder().decode(configBytes)), phonemizer });
+    lap('sessao', t);
     current = { id: voiceId, voice, gain: meta.gain ?? 1 };
-    return { sampleRate: voice.sampleRate };
+    return { sampleRate: voice.sampleRate, timings };
   },
   async download({ voiceId }, progress) {
     const meta = voiceById(voiceId);

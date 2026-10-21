@@ -68,7 +68,36 @@ Tempos medidos no Chromium headless: Piper ≈ 7 s até o 1º áudio (inclui bai
 
 `npm run e2e:files` — abre TXT, MD, DOCX, EPUB e PDF pelo seletor de arquivos, confere o texto exibido e o aviso para formato inválido.
 
-## 6. O que NÃO foi verificado
+## 6. Rodada 2 — texto colado e demora para começar (relato de uso no celular)
+
+**Causa da demora (medida, Chromium com CPU 4× mais lenta, modelo já em cache, texto colado de 316 mil caracteres):**
+carregar a voz (criar a sessão ONNX) + sintetizar o **primeiro trecho inteiro** (~12–15 s de áudio). No Supertonic a síntese roda ~1,1–1,4× o tempo do áudio, então o 1º trecho sozinho levava ~17 s.
+
+| Tempo até o 1º som após tocar ▶ | antes | depois (▶ imediato) | depois (voz já pré-carregada) |
+|---|---|---|---|
+| Piper Cadu | 6,8 s | 4,6 s | **1,0 s** |
+| Supertonic F1 (5 passos) | 21,0 s | 9,3 s | **4,0 s** |
+
+O que mudou: nível `basic` do ONNX (criar sessão: Piper 1,44→0,68 s; Supertonic 4 sessões 38,6→3,2 s em Node, síntese sem perda), pré-carga da voz ao abrir o texto,
+trecho inicial dividido em duas unidades (início curto + resto) e trechos-alvo menores (110 caracteres).
+O Supertonic ainda gera mais devagar que a fala em CPU lenta (medido 1,36–1,37× no trecho curto): haverá pausas entre trechos; o app avisa e sugere reduzir o refinamento ou usar Piper.
+
+**Bugs de leitura encontrados em texto colado (corrigidos, cada um com teste):**
+horas viravam "dezhtrinta"/"oitoh"/"doish"; datas "21/10/2026" saíam como "vinte e um/dez/dois mil…"; telefone/CPF eram lidos como números enormes;
+"R$ 1,5 milhão" saía "um real e cinquenta centavos milhão"; "3°C" virava "terceiroC" e "21º" virava "vinte e umº"; emojis eram falados pelo Piper;
+e-mails, hashtags, símbolos e unidades (km/h, kg, min) saíam crus; "Capítulo XII" e "século XXI" eram soletrados; blocos em MAIÚSCULAS podiam ser soletrados.
+Quebras de linha simples (listas, versos, títulos, mensagens) eram fundidas num bloco só; agora só se junta quando parece texto "quebrado" de PDF.
+Trechos sem nada falável (`***`, `...`, só emoji) agora não chamam o motor e viram um silêncio de ≥0,25 s (antes podiam gerar um WAV de 0 s).
+Um erro ao preparar o trecho seguinte não derruba mais o trecho que está tocando.
+
+**Tamanho do texto:** limpeza+divisão de 320 mil caracteres leva ~80 ms e de 2,1 milhões ~0,3 s (Node); no Chromium com CPU 4× mais lenta um texto de 2,1 milhões de caracteres
+(28.572 trechos) abre em ~5,5 s, renderiza o resto em lotes (pior travamento de tela 261 ms) e o 1º som sai em ~3,7 s. Não encontrei falha causada só pelo tamanho; a medição
+sugere que o atraso percebido vinha da síntese do 1º trecho, não do texto.
+
+**Não reproduzido/ainda aberto:** a descrição "bugs ao importar texto" era genérica; os acima são o que consegui provocar. Se ainda ocorrer algo específico no celular
+(mensagem de erro, trecho que trava, palavra lida errada), preciso do exemplo exato do texto.
+
+## 7. O que NÃO foi verificado
 
 - **Qualidade/naturalidade do áudio** e a percepção de gênero (precisa de ouvidos).
 - **Celulares reais** (iOS/Android): memória do Supertonic (~400 MB de modelo), velocidade em CPU móvel, reprodução com tela bloqueada, instalação como PWA.

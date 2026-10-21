@@ -128,4 +128,122 @@ describe('Player com motor falso', () => {
     await until(() => errors.length === 1);
     expect(player.state).toBe('error');
   });
+
+  it('pré-carga e ▶ simultâneos carregam a voz uma só vez e o play começa sem novo carregamento', async () => {
+    const { engine, audio, player } = setup({ loadDelay: 40 });
+    const pre = player.preload();
+    await player.play();
+    await pre;
+    await until(() => audio.played.length === 1);
+    expect(engine.calls.load).toEqual(['fake:f']);
+    expect(player.metrics.load.ms).toBeGreaterThanOrEqual(0);
+    audio.end();
+    await until(() => audio.played.length === 2);
+    expect(engine.calls.load.length).toBe(1);
+  });
+
+  it('com a voz já pré-carregada, o ▶ só espera a síntese', async () => {
+    const { engine, audio, player } = setup({ loadDelay: 60 }, 2);
+    await player.preload();
+    const t0 = Date.now();
+    await player.play();
+    await until(() => audio.played.length === 1);
+    expect(Date.now() - t0).toBeLessThan(40);
+    expect(engine.calls.load.length).toBe(1);
+  });
+
+  it('trechos sem nada falável não chamam o motor e viram um silêncio audível (nunca um WAV vazio)', async () => {
+    const wavs = [];
+    const engine = fakeEngine({});
+    const audio = new FakeAudio();
+    const player = new Player({ audio, resolveEngine: () => engine, createUrl: (w) => { wavs.push(w.length); return `blob:${wavs.length}`; }, revokeUrl: () => {} });
+    player.configure({ voiceId: 'fake:f', sentencePause: 0 });
+    player.setChunks([{ text: '* * *', endsParagraph: false, paragraph: 0 }, { text: '😀', endsParagraph: false, paragraph: 0 }, { text: 'Fim.', endsParagraph: true, paragraph: 0 }]);
+    await player.play();
+    await until(() => audio.played.length === 1);
+    audio.end(); await until(() => audio.played.length === 2);
+    audio.end(); await until(() => audio.played.length === 3);
+    expect(engine.calls.synth.map((c) => c.text)).toEqual(['Fim.']);
+    expect(wavs[0]).toBeGreaterThan(44 + 2000 * 2 * 0.25 * 0.9); // ≥ 0,25 s a 22,05 kHz, 16 bits
+    expect(wavs[1]).toBe(wavs[0]);
+  });
+
+  it('emite "slow" uma vez quando a síntese é mais lenta que a fala', () => {
+    const { player } = setup();
+    const events = [];
+    player.on('slow', (e) => events.push(e));
+    player._recordSynth(4000, 3, 'fake:f'); // rtf 1,33
+    expect(events.length).toBe(0); // precisa de 2 amostras
+    player._recordSynth(4200, 3, 'fake:f');
+    player._recordSynth(4200, 3, 'fake:f');
+    expect(events.length).toBe(1);
+    expect(events[0]).toMatchObject({ voiceId: 'fake:f', steps: 5 });
+    expect(events[0].rtf).toBeGreaterThan(1.3);
+  });
+
+  it('não emite "slow" para voz rápida', () => {
+    const { player } = setup();
+    const events = [];
+    player.on('slow', (e) => events.push(e));
+    for (let i = 0; i < 4; i++) player._recordSynth(1000, 3, 'fake:f');
+    expect(events.length).toBe(0);
+  });
+});
+
+describe('Player: início rápido (trecho inicial dividido em duas unidades)', () => {
+  const long = 'Uma noite destas, vindo da cidade para o Engenho Novo, encontrei num trem da Central um rapaz aqui do bairro.';
+  function setupLong() {
+    const engine = fakeEngine({});
+    const audio = new FakeAudio();
+    const player = new Player({ audio, resolveEngine: () => engine, createUrl: () => `blob:${Math.random()}`, revokeUrl: () => {} });
+    player.configure({ voiceId: 'fake:f' });
+    player.setChunks([
+      { text: long, endsParagraph: false, paragraph: 0 },
+      { text: 'Segundo trecho curto.', endsParagraph: true, paragraph: 0 },
+    ]);
+    return { engine, audio, player };
+  }
+
+  it('sintetiza primeiro só o início; o trecho continua sendo o mesmo para a interface', async () => {
+    const { engine, audio, player } = setupLong();
+    const indexes = [];
+    player.on('index', (i) => indexes.push(i));
+    await player.play();
+    await until(() => audio.played.length === 1);
+    expect(engine.calls.synth[0].text).toBe('Uma noite destas, vindo da cidade para o Engenho Novo,');
+    expect(player.index).toBe(0);
+    audio.end(); await until(() => audio.played.length === 2);
+    expect(player.index).toBe(0); // ainda o trecho 0 (segunda metade)
+    audio.end(); await until(() => audio.played.length === 3);
+    expect(player.index).toBe(1);
+    audio.end();
+    expect(player.state).toBe('ended');
+    expect(engine.calls.synth.map((c) => c.text)).toEqual([
+      'Uma noite destas, vindo da cidade para o Engenho Novo,',
+      'encontrei num trem da Central um rapaz aqui do bairro.',
+      'Segundo trecho curto.',
+    ]);
+    expect(indexes).toEqual([1]); // o 0 já foi anunciado em setChunks; as duas metades do trecho 0 não geram evento repetido
+  });
+
+  it('seek/next em trecho dividido toca desde o início do trecho', async () => {
+    const { engine, audio, player } = setupLong();
+    await player.play(1);
+    await until(() => audio.played.length === 1);
+    player.prev();
+    await until(() => audio.played.length === 2);
+    expect(player.index).toBe(0);
+    expect(engine.calls.synth.map((c) => c.text)).toContain('Uma noite destas, vindo da cidade para o Engenho Novo,');
+  });
+
+  it('fastStart desligado mantém uma unidade por trecho', async () => {
+    const engine = fakeEngine({});
+    const audio = new FakeAudio();
+    const player = new Player({ audio, resolveEngine: () => engine, createUrl: () => 'blob:x', revokeUrl: () => {}, fastStart: false });
+    player.configure({ voiceId: 'fake:f' });
+    player.setChunks([{ text: long, endsParagraph: true, paragraph: 0 }]);
+    await player.play();
+    await until(() => audio.played.length === 1);
+    expect(engine.calls.synth[0].text).toBe(long);
+  });
 });

@@ -15,6 +15,7 @@ const $ = (id) => document.getElementById(id);
 const MAX_CHUNK = 220;
 let settings = loadSettings();
 if (!voiceMeta(settings.voiceId)) settings.voiceId = DEFAULT_VOICE_ID;
+const READY_MSG = 'Pronto. Toque em ▶ ou em qualquer trecho para começar.';
 let doc = null; // { id, title, text, chunks, pos }
 
 const audio = $('audio');
@@ -47,21 +48,47 @@ function syncPlayerSettings() {
 }
 
 // ---------- documento ----------
-function renderReader() {
+// Renderização progressiva: textos enormes (livros) não congelam o celular. Os primeiros trechos aparecem logo;
+// o resto entra em lotes. highlight() garante que o trecho atual já exista na tela.
+const BATCH = 400;
+let renderState = null;
+
+function startRender(startAt) {
   const box = $('text');
   box.replaceChildren();
-  let current = -1;
-  let p = null;
-  doc.chunks.forEach((c, i) => {
-    if (c.paragraph !== current) { current = c.paragraph; p = document.createElement('p'); box.append(p); }
+  renderState = { token: Symbol('render'), next: 0, para: -1, p: null };
+  $('doc-title').textContent = doc.title;
+  renderMore(Math.max(BATCH, startAt + 100));
+  const { token } = renderState;
+  const step = () => {
+    if (!doc || !renderState || renderState.token !== token || renderState.next >= doc.chunks.length) return;
+    renderMore(BATCH);
+    setTimeout(step, 0);
+  };
+  setTimeout(step, 0);
+}
+
+function renderMore(count) {
+  const st = renderState;
+  const end = Math.min(doc.chunks.length, st.next + count);
+  const frag = document.createDocumentFragment();
+  for (; st.next < end; st.next++) {
+    const c = doc.chunks[st.next];
+    if (c.paragraph !== st.para || !st.p) {
+      st.para = c.paragraph;
+      st.p = document.createElement('p');
+      frag.append(st.p);
+    }
     const span = document.createElement('span');
     span.className = 'chunk';
-    span.dataset.i = String(i);
+    span.dataset.i = String(st.next);
     span.textContent = `${c.text} `;
-    p.append(span);
-  });
-  $('doc-title').textContent = doc.title;
+    st.p.append(span);
+  }
+  $('text').append(frag);
 }
+
+const ensureRendered = (i) => { while (renderState && renderState.next <= i && renderState.next < doc.chunks.length) renderMore(BATCH); };
 
 function showReader(show) {
   $('home').hidden = show;
@@ -76,13 +103,14 @@ async function openText(title, text, pos = 0) {
   const chunks = splitIntoChunks(text, { maxLen: MAX_CHUNK });
   if (!chunks.length) { toast('Não há texto para ler.'); return; }
   doc = { id, title, text, chunks, pos: saved?.pos ?? pos };
-  renderReader();
+  startRender(doc.pos);
   showReader(true);
   player.setChunks(chunks, doc.pos);
   await saveDoc({ id, title, text, pos: doc.pos, total: chunks.length, updated: Date.now() }).catch(() => {});
   highlight(doc.pos, false);
-  setStatus('Pronto. Toque em ▶ ou em qualquer trecho para começar.');
+  setStatus(READY_MSG);
   window.scrollTo(0, 0);
+  warmUp();
 }
 
 async function loadPdfjs() {
@@ -112,6 +140,8 @@ async function openFile(file) {
 
 // ---------- destaque e estado ----------
 function highlight(i, scroll = true) {
+  if (!doc) return;
+  ensureRendered(i);
   $('text').querySelector('.chunk.active')?.classList.remove('active');
   const span = $('text').querySelector(`.chunk[data-i="${i}"]`);
   span?.classList.add('active');
@@ -149,7 +179,15 @@ player.on('index', (i) => {
   }
   updateStatus();
 });
-player.on('progress', (p) => { lastProgress = p; updateStatus(); });
+player.on('progress', (p) => {
+  lastProgress = p;
+  if (p === null && player.state === 'idle' && doc) setStatus(READY_MSG);
+  else updateStatus();
+});
+player.on('slow', ({ rtf, voiceId }) => {
+  const v = voiceMeta(voiceId);
+  toast(`A voz ${v?.name ?? ''} está gerando ${rtf.toString().replace('.', ',')}× mais devagar que a fala neste aparelho, por isso haverá pausas. Abra "⚙ Vozes" e reduza o refinamento do Supertonic, ou use uma voz Piper.`);
+});
 player.on('state', (s) => {
   if (s !== 'loading') lastProgress = s === 'buffering' || s === 'playing' ? null : lastProgress;
   const playing = s === 'playing';
@@ -175,6 +213,15 @@ async function ensureVoiceReady() {
   return window.confirm(`A voz "${voice.name}" precisa baixar ${mb} MB uma única vez. Depois funciona sem internet. Continuar?`);
 }
 
+/** Carrega a voz em segundo plano (só se já estiver baixada: nunca baixa nada sem pedir). */
+async function warmUp() {
+  if (!doc || !voiceMeta(settings.voiceId)) return;
+  const cached = await cachedMapAll().catch(() => ({}));
+  if (!cached[settings.voiceId]) return;
+  syncPlayerSettings();
+  player.preload();
+}
+
 async function togglePlay() {
   if (!doc) return;
   if (['playing', 'buffering', 'loading'].includes(player.state)) { player.pause(); return; }
@@ -196,7 +243,7 @@ $('text').addEventListener('click', async (e) => {
   syncPlayerSettings();
   await player.play(Number(span.dataset.i));
 });
-$('btn-close').addEventListener('click', () => { player.stop(); doc = null; showReader(false); renderRecent(); });
+$('btn-close').addEventListener('click', () => { player.stop(); doc = null; renderState = null; showReader(false); renderRecent(); });
 
 document.addEventListener('keydown', (e) => {
   if (!doc || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || document.querySelector('dialog[open]')) return;
@@ -255,7 +302,7 @@ async function renderRecent() {
 const voicesUI = initVoicesUI({
   container: $('voices'),
   getSettings: () => settings,
-  onSelect: (id) => { settings.voiceId = id; persist(); syncPlayerSettings(); },
+  onSelect: (id) => { settings.voiceId = id; persist(); syncPlayerSettings(); warmUp(); },
   onEngineTouched: () => player.invalidateLoaded(),
   onPause: () => player.pause(),
   toast,
@@ -298,6 +345,8 @@ if ('mediaSession' in navigator) {
 }
 
 // ---------- início ----------
+// a barra inferior muda de altura (textos de status, botões que quebram linha): reserva o espaço real no fim da página
+new ResizeObserver(([e]) => document.documentElement.style.setProperty('--bar-h', `${Math.ceil(e.target.getBoundingClientRect().height)}px`)).observe($('bar'));
 applyAppearance();
 syncPlayerSettings();
 renderRecent();

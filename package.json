@@ -13,7 +13,8 @@
     "verify:engines": "node scripts/verify-engines.mjs",
     "e2e:files": "node tests/e2e/files-ui.mjs",
     "e2e:voices": "node tests/e2e/real-voice.mjs",
-    "e2e:voices:all": "node tests/e2e/real-voice.mjs --supertonic"
+    "e2e:voices:all": "node tests/e2e/real-voice.mjs --supertonic",
+    "e2e:stress": "node tests/e2e/paste-stress.mjs"
   },
   "dependencies": {
     "fflate": "0.8.2",
