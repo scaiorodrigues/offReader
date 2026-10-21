@@ -1,10 +1,12 @@
 // Dublês de teste: motor falso (interface comum), <audio> falso e CacheStorage em memória.
 export class FakeAudio extends EventTarget {
-  constructor() { super(); this.src = ''; this.played = []; this.paused = true; }
-  removeAttribute() { this.src = ''; }
+  constructor() { super(); this.src = ''; this.played = []; this.paused = true; this.currentTime = 0; this.loop = false; }
+  removeAttribute() { this.src = ''; this.currentTime = 0; }
   async play() { this.paused = false; this.played.push(this.src); }
   pause() { this.paused = true; }
   end() { this.dispatchEvent(new Event('ended')); }
+  /** Simula o avanço da reprodução até `t` segundos do segmento atual (dispara timeupdate). */
+  at(t) { this.currentTime = t; this.dispatchEvent(new Event('timeupdate')); }
 }
 
 export function fakeEngine({ id = 'fake', voices, delay = 0, failOn = null, loadDelay = 0 } = {}) {

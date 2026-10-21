@@ -19,7 +19,9 @@ const READY_MSG = 'Pronto. Toque em ▶ ou em qualquer trecho para começar.';
 let doc = null; // { id, title, text, chunks, pos }
 
 const audio = $('audio');
-const player = new Player({ audio, resolveEngine: (id) => engineForVoice(id), unlockAudio: true });
+// Tela bloqueada: o <audio> é a única coisa que o navegador mantém viva; `keepAlive` toca silêncio quando precisa esperar a síntese.
+try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* Safari antigo */ }
+const player = new Player({ audio, resolveEngine: (id) => engineForVoice(id), unlockAudio: true, keepAlive: true });
 
 // ---------- utilidades ----------
 let toastTimer;
@@ -40,7 +42,7 @@ function applyAppearance() {
 function syncPlayerSettings() {
   player.configure({
     voiceId: settings.voiceId, speed: settings.speed, steps: settings.steps,
-    sentencePause: settings.sentencePause, paragraphPause: settings.paragraphPause,
+    sentencePause: settings.sentencePause, paragraphPause: settings.paragraphPause, bufferSec: settings.bufferSec,
   });
   $('speed').value = String(settings.speed);
   const v = voiceMeta(settings.voiceId);
@@ -157,6 +159,7 @@ function setStatus(msg, error = false) {
 }
 
 let lastProgress = null;
+const fmtBuffer = (sec) => (sec < 5 ? 'sem folga' : sec < 90 ? `${Math.round(sec)} s prontos` : `${(sec / 60).toFixed(1).replace('.', ',')} min prontos`);
 function updateStatus() {
   const n = doc?.chunks.length ?? 0;
   const pos = `Trecho ${player.index + 1} de ${n}`;
@@ -165,7 +168,7 @@ function updateStatus() {
   else if (lastProgress?.phase === 'preparando') setStatus('Preparando a voz (pode levar alguns segundos)…');
   else if (player.state === 'loading') setStatus('Carregando a voz…');
   else if (player.state === 'buffering') setStatus(`Gerando o áudio… (${pos})`);
-  else if (player.state === 'playing') setStatus(pos);
+  else if (player.state === 'playing') setStatus(`${pos} · ${fmtBuffer(player.bufferedSec)}`);
   else if (player.state === 'paused') setStatus(`Pausado · ${pos}`);
   else if (player.state === 'ended') setStatus('Fim da leitura.');
 }
@@ -184,6 +187,7 @@ player.on('progress', (p) => {
   if (p === null && player.state === 'idle' && doc) setStatus(READY_MSG);
   else updateStatus();
 });
+player.on('buffer', () => { if (player.state === 'playing') updateStatus(); });
 player.on('slow', ({ rtf, voiceId }) => {
   const v = voiceMeta(voiceId);
   toast(`A voz ${v?.name ?? ''} está gerando ${rtf.toString().replace('.', ',')}× mais devagar que a fala neste aparelho, por isso haverá pausas. Abra "⚙ Vozes" e reduza o refinamento do Supertonic, ou use uma voz Piper.`);
@@ -313,6 +317,7 @@ const bindings = [
   ['set-sp', 'out-sp', 'sentencePause', (v) => `${v.toFixed(2).replace('.', ',')} s`],
   ['set-pp', 'out-pp', 'paragraphPause', (v) => `${v.toFixed(1).replace('.', ',')} s`],
   ['set-steps', 'out-steps', 'steps', (v) => `${v} passos`],
+  ['set-buffer', 'out-buffer', 'bufferSec', (v) => (v < 60 ? `${v} s` : `${(v / 60).toString().replace('.', ',')} min`)],
   ['set-font', 'out-font', 'fontSize', (v) => `${v} px`],
 ];
 function syncSettingsForm() {

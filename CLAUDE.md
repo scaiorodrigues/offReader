@@ -15,6 +15,7 @@ npm run e2e:files      # Chromium: abre TXT/MD/DOCX/EPUB/PDF pela interface (sem
 npm run e2e:voices     # Chromium + modelo Piper REAL (baixa ~63 MB): toca, prévia, cache e OFFLINE
 npm run e2e:voices:all # idem + Supertonic F1 (baixa ~400 MB, leva alguns minutos)
 npm run verify:engines # Node + modelos reais: sintetiza com os motores e grava WAVs + estatísticas
+npm run e2e:background # Chromium + Piper real: buffer à frente, segmentos longos e áudio que continua com a página CONGELADA (emulação)
 npm run e2e:stress     # Chromium com CPU limitada: cola um texto enorme e mede o tempo até o 1º som (ver cabeçalho do arquivo)
 ```
 Verificações de áudio fora do navegador: `scripts/f0-check.py` (altura da voz/gênero, Praat) e `scripts/asr-check.py` (Whisper → WER).
@@ -28,10 +29,12 @@ src/ui/voices-ui.js         lista de vozes (Femininas/Masculinas), prévia, baix
 src/lib/normalize.js        cleanText (extração; decide quebra de linha: continuação de PDF x título/item/verso) e prepareForSpeech
                             (horas, datas, telefone/CPF, moeda, ordinais, romanos, unidades, e-mail, emojis, MAIÚSCULAS -> fala pt-BR)
 src/lib/split.js            texto -> trechos (frases agrupadas até targetLen=110, limite rígido maxLen=220; quebra simples = fronteira) e splitHead
-src/lib/player.js           fila de síntese com pré-busca (2 à frente) sobre um <audio>; independe do motor.
-                            "Trecho" = o que a UI destaca; "unidade" = o que é sintetizado (o trecho em que a leitura COMEÇA vira 2 unidades:
-                            início curto + resto, para o 1º som sair cedo). `index` é sempre de trecho. `preload()` aquece a voz em 2º plano.
-src/lib/wav.js              PCM -> WAV 16 bits (+ silêncio final = pausa) e estatísticas
+src/lib/player.js           fila de síntese sobre um <audio>; independe do motor. Vocabulário: "trecho" = o que a UI destaca;
+                            "unidade" = o que é sintetizado (o trecho em que a leitura COMEÇA vira 2: início curto + resto);
+                            "segmento" = unidades já prontas EMENDADAS num WAV único (até 90 s) que o <audio> toca de uma vez.
+                            Buffer POR TEMPO (`settings.bufferSec`, padrão 180 s): sintetiza à frente enquanto o áudio pronto < alvo.
+                            `index` é sempre de trecho; `preload()` aquece a voz; `keepAlive` toca silêncio em loop se precisar esperar.
+src/lib/wav.js              PCM -> WAV 16 bits (+ silêncio final = pausa), floatToInt16, partsToWav (emenda unidades) e estatísticas
 src/lib/storage.js          configurações (localStorage) e documentos recentes (IndexedDB)
 src/lib/parsers/            txt, md, docx (fflate), epub (fflate), pdf (pdf.js injetado); sem DOM => testável no Node
 src/lib/engines/
@@ -63,6 +66,9 @@ Adicionar um motor = criar worker + core, entrar no catálogo `voices.js` e regi
 - Os binários `.wasm` do ORT são servidos de `/vendor/ort/` (`ort.env.wasm.wasmPaths`), nunca de CDN: o app precisa funcionar offline e sob subcaminho (`base: './'`).
 - **Piper:** use o `phoneme_id_map` **do modelo** (`phonemesToIds`), não o `phoneme_ids` do CLI do fonemizador: o CLI usa um mapa padrão e a voz Edresson quebra (índice fora do embedding).
 - **Latência até o 1º som** (medida com CPU 4× mais lenta, modelo em cache): o custo é carregar a voz + sintetizar o 1º trecho. Por isso: (1) `graphOptimizationLevel: 'basic'` nos dois motores (criar a sessão cai ~50% no Piper e de 38 s→3 s no Supertonic nas medições, sem síntese mais lenta; 'all' também usa mais memória); (2) `warmUp()` em `main.js` pré-carrega a voz ao abrir o texto (só se já estiver baixada — nunca baixa sem pedir); (3) o trecho inicial é dividido (`splitHead`). Não volte para 'all' sem medir.
+- **Tela bloqueada (NÃO verificado em celular real):** o app usa `<audio>` + Media Session + `navigator.audioSession.type='playback'`. O ponto frágil é o instante em que um segmento acaba e o JS precisa trocar o `src`
+  com a página em segundo plano. Mitigações: buffer fundo (3 min), segmentos longos (poucas trocas), silêncio em loop (`keepAlive`) se faltar áudio pronto. O E2E `e2e:background` só prova que o áudio já emendado continua com o JS congelado no Chromium.
+  Mudar voz/velocidade com um segmento longo em curso **corta no fim da unidade atual** (`_scheduleCut`), então o tamanho do segmento não atrasa a mudança.
 - Trechos sem letra/número (`***`, `...`, emoji) **não chamam o motor** e viram ≥0,25 s de silêncio; um WAV de 0 s pode dar erro no `<audio>`.
 - Texto grande: a UI renderiza em lotes (`startRender`/`renderMore`); `highlight()` chama `ensureRendered`. Não renderize 30 mil `<span>` de uma vez.
 - **Supertonic:** ~396 MB (vector_estimator 256 MB, vocoder 101 MB). Pico de memória alto ao criar sessões: em celulares pode falhar. Custo de síntese ≈ proporcional ao nº de passos (3→0,9×, 5→1,2×, 8→1,9× o tempo do áudio, medido em CPU de servidor, 1 thread). Por isso o player pré-busca à frente e o padrão é 5 passos.

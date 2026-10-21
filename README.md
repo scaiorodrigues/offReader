@@ -45,7 +45,7 @@ Testes de ponta a ponta no Chromium e verificações com modelos reais: veja [CL
 
 ## Como funciona
 
-`texto → limpeza (normalize) → trechos (split) → motor de voz (worker) → WAV → <audio>`, com síntese de 2 trechos à frente enquanto um toca.
+`texto → limpeza (normalize) → trechos (split) → motor de voz (worker) → WAV → <audio>`. Enquanto toca, o app já deixa vários minutos de áudio prontos à frente (ajustável em "Preparar com antecedência") e emenda tudo em blocos contínuos.
 Os motores seguem uma interface comum (`listVoices`, `load`, `synth`, `cachedMap`, `remove`), então adicionar outro motor não mexe no player nem na interface.
 Detalhes e armadilhas em [CLAUDE.md](CLAUDE.md).
 
@@ -53,7 +53,7 @@ Detalhes e armadilhas em [CLAUDE.md](CLAUDE.md).
 
 - PDFs digitalizados (imagens) não têm texto extraível; o app avisa, mas não faz OCR.
 - Supertonic em celulares antigos pode ficar lento ou faltar memória; use Piper como reserva.
-- A leitura em segundo plano com a tela bloqueada depende do navegador (iOS é o mais restritivo).
+- A leitura com a **tela apagada** depende do navegador e do sistema (iOS é o mais restritivo). O app prepara minutos de áudio à frente e toca em blocos longos para ajudar, mas isso ainda não foi confirmado em celular real. Se parar, deixe o app instalado ("Adicionar à tela inicial") e aumente "Preparar com antecedência".
 - ONNX roda com 1 thread (sem COOP/COEP).
 
 ## Licenças e créditos

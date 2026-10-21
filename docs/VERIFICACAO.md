@@ -97,10 +97,22 @@ sugere que o atraso percebido vinha da síntese do 1º trecho, não do texto.
 **Não reproduzido/ainda aberto:** a descrição "bugs ao importar texto" era genérica; os acima são o que consegui provocar. Se ainda ocorrer algo específico no celular
 (mensagem de erro, trecho que trava, palavra lida errada), preciso do exemplo exato do texto.
 
-## 7. O que NÃO foi verificado
+## 7. Rodada 3 — buffer à frente e tela apagada
+
+**Mudança:** antes o app preparava só 2 trechos (~10 s) à frente e trocava o áudio a cada trecho. Agora prepara por **tempo** (padrão 3 min; 30 s a 10 min) e emenda as unidades prontas em segmentos de até 90 s.
+Se o próximo áudio ainda não está pronto, toca um silêncio em loop para manter a sessão de áudio viva. Trocar voz/velocidade corta o segmento no fim da unidade atual.
+
+**Medido (Chromium, Piper Cadu, texto longo):** buffer à frente > 40 s poucos segundos depois de começar; 3 trocas de áudio no início (antes: uma por trecho).
+**Emulação de tela apagada:** com a página **congelada** pelo DevTools por 12 s (JS parado), o áudio já emendado seguiu tocando (avançou 12 s) e o destaque alcançou a posição real ao descongelar.
+Isso mostra que o segmento longo não depende do JavaScript enquanto toca; **não** mostra que o celular manterá a página viva na troca de um segmento para o outro.
+O Supertonic (gera ~1,1–1,4× o tempo do áudio em CPU lenta) não consegue encher o buffer: há pausas entre trechos, preenchidas com silêncio em loop.
+
+**Não dá para "carregar tudo de uma vez":** sintetizar um livro inteiro leva horas de CPU (e bateria), ocupa centenas de MB e fica obsoleto ao mudar voz/velocidade. O buffer por tempo é o equivalente seguro.
+
+## 8. O que NÃO foi verificado
 
 - **Qualidade/naturalidade do áudio** e a percepção de gênero (precisa de ouvidos).
-- **Celulares reais** (iOS/Android): memória do Supertonic (~400 MB de modelo), velocidade em CPU móvel, reprodução com tela bloqueada, instalação como PWA.
+- **Celulares reais** (iOS/Android): memória do Supertonic (~400 MB de modelo), velocidade em CPU móvel, **reprodução com tela bloqueada** (a troca de um segmento para o próximo em segundo plano é o ponto de risco), instalação como PWA.
 - **Deploy real no Netlify** (só o build local e o `netlify.toml`); cabeçalhos de cache.
 - PDFs reais grandes/complexos (só PDF sintético simples); EPUB/DOCX reais com estruturas exóticas.
 - Supertonic com WebGPU (não implementado; só WASM).

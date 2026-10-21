@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS = {
   steps: 5,
   sentencePause: 0.35,
   paragraphPause: 0.8,
+  bufferSec: 180,
   theme: 'auto',
   fontSize: 20,
 };
